@@ -1,0 +1,4 @@
+{
+  "teamA": {"top": "UserA", "jg": "UserB", ...},
+  "teamB": {"top": "UserF", "jg": "UserG", ...}
+}
