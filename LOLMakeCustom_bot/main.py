@@ -21,6 +21,7 @@ ability_file = 'abilities.json'
 team_file = 'last_teams.json'
 history_file = 'history.json'
 participants = {}  # {guild_id(int): {user_id(int): [lane1, lane2]}} または ['fill']
+ability_cap = 300 #勝利時の上限値
 
 # ===== 環境変数 =====
 load_dotenv()
@@ -513,7 +514,7 @@ async def win(ctx, winner: str):
         delta = 10 if match_count < 5 else 2
         current_ability = guild_abilities[uid].get(lane, 60)
         if is_winner:
-            guild_abilities[uid][lane] = min(120, current_ability + delta)
+            guild_abilities[uid][lane] = min(ability_cap, current_ability + delta)
         else:
             guild_abilities[uid][lane] = max(0, current_ability - delta)
 
