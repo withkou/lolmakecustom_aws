@@ -417,14 +417,20 @@ async def show_teams(ctx):
     msg = header + format_team(lt["team_a"], "Team A") + "\n" + format_team(lt["team_b"], "Team B")
     await ctx.send(msg)
 
-@bot.command()
+@bot.command(name="debug_last_teams", aliases=["debuglt", "dlt"])
 async def debug_last_teams(ctx):
     guild_id = str(ctx.guild.id)
-    lt_all = load_data(team_file)
-    if guild_id not in lt_all:
-        await ctx.send("直近のチームデータが見つかりません。")
+    try:
+        data = load_data(team_file)  # team_file = "last_teams.json"
+    except Exception as e:
+        await ctx.send(f"last_teams.json の読み込みに失敗しました: {e}")
         return
-    lt = lt_all[guild_id]
+
+    if not data or guild_id not in data:
+        await ctx.send("直近のチームデータが見つかりません。（まだ !make_teams を実行していない可能性があります）")
+        return
+
+    lt = data[guild_id]
     msg = (
         f"**DEBUG last_teams**\n"
         f"match_id: {lt.get('match_id')}\n"
