@@ -417,29 +417,6 @@ async def show_teams(ctx):
     msg = header + format_team(lt["team_a"], "Team A") + "\n" + format_team(lt["team_b"], "Team B")
     await ctx.send(msg)
 
-@bot.command(name="debug_last_teams", aliases=["debuglt", "dlt"])
-async def debug_last_teams(ctx):
-    guild_id = str(ctx.guild.id)
-    try:
-        data = load_data(team_file)  # team_file = "last_teams.json"
-    except Exception as e:
-        await ctx.send(f"last_teams.json の読み込みに失敗しました: {e}")
-        return
-
-    if not data or guild_id not in data:
-        await ctx.send("直近のチームデータが見つかりません。（まだ !make_teams を実行していない可能性があります）")
-        return
-
-    lt = data[guild_id]
-    msg = (
-        f"**DEBUG last_teams**\n"
-        f"match_id: {lt.get('match_id')}\n"
-        f"recorded: {lt.get('recorded')}\n"
-        f"Team A: {lt.get('team_a')}\n"
-        f"Team B: {lt.get('team_b')}\n"
-    )
-    await ctx.send(msg)
-
 # ===== スワップ =====
 @bot.command()
 async def swap(ctx, member1: discord.Member, member2: discord.Member):
@@ -637,7 +614,6 @@ async def help_mc_command(ctx):
 !ranking - 各レーンの能力値ランキング
 !show_custom @user - 各個人のカスタム戦績
 !show_teams - 直近チームと合計
-!debug_last_teams - 直近編成の生情報（デバッグ）
 
 !help_mc_detail - 詳細説明
 """)
@@ -675,8 +651,7 @@ async def help_mc_detail_command(ctx):
 → 二重報告はブロックされます
 
 【📊 各種統計】
-'!ranking' / '!show_custom @user'
-'!show_teams' / '!debug_last_teams'
+'!ranking' / '!show_custom @user' / '!show_teams'
 """)
 
 # ===== 起動 =====
