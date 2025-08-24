@@ -21,7 +21,10 @@ ability_file = 'abilities.json'
 team_file = 'last_teams.json'
 history_file = 'history.json'
 participants = {}  # {guild_id(int): {user_id(int): [lane1, lane2]}} または ['fill']
-ability_cap = 300 #勝利時の上限値
+ability_cap = 300 #勝利時の上限値 #元ソースの想定上限値は120
+EARLY_MATCHES = 5 # 最初の5戦まで
+DELTA_EARLY = 10  # 1～5戦目の増減
+DELTA_LATE = 5    # 6戦目以降の増減
 
 # ===== 環境変数 =====
 load_dotenv()
@@ -66,64 +69,81 @@ async def on_guild_join(guild):
     for channel in guild.text_channels:
         if channel.permissions_for(guild.me).send_messages:
             await channel.send("""
-📘LOLMakeCustomコマンド詳細説明
+📘 **LOLMakeCustom コマンド詳細説明**
 
-【🧠 能力値関連】
-'!ability @user 10 10 10 10 10'
-→ @user に top, jg, mid, adc, sup の順で能力値を登録（0以上)
+---
 
-'!delete_ability @user'
-→ 指定ユーザーの能力値を削除
+### 🧠 能力値関連
+- `!ability @user 10 10 10 10 10`  
+  → @user に **top, jg, mid, adc, sup** の順で能力値を登録（0以上）
 
-'!show_ability'
-→ 登録済みの全ユーザーの能力値と合計を表示（合計順）
+- `!delete_ability @user`  
+  → 指定ユーザーの能力値を削除
 
-【🎮 参加関連】
-'!join @user top jg'
-→ 希望レーンを2つまで登録（例：topとjg）
+- `!show_ability`  
+  → 登録済みの全ユーザーの能力値と **合計値順** で表示
 
-'!join @user fill fill'
-→ レーンがどこでも良い場合はfillを利用してください
+---
 
-'!leave @user'
-→ 参加リストから@userを削除
+### 🎮 参加関連
+- `!join @user top jg`  
+  → 希望レーンを2つまで登録（例：top と jg）
 
-'!participants_list'
-→ 現在の参加メンバー一覧と希望レーンを表示
+- `!join @user fill fill`  
+  → レーンがどこでも良い場合は **fill** を利用
 
-'!reset'
-→ 参加者を全てリセット
+- `!leave @user`  
+  → 参加リストから @user を削除
 
-【⚔️ チーム編成関連】
-'!make_teams 20 50'
-→ 希望レーンを考慮して10人を自動で5v5に分ける
-　- 各レーン対面差が20以内、チーム合計差が50以内を目安
-　- 条件を満たせない場合も、なるべくバランスよく編成（警告あり）
+- `!participants_list`  
+  → 現在の参加メンバー一覧と希望レーンを表示
 
-'!swap @user1 @user2'
-→ レーン・チームを入れ替え
-　- 直前の !make_teams の編成が必要
+- `!reset`  
+  → 参加者を全てリセット
 
-【🏆 勝敗報告と成績】
-'!win A または !win B'
-→ 勝利チームのレーン能力値を+、敗者は−で調整
-　- 5戦目までは ±10、6戦目以降は ±2
+---
 
-【📊 各種統計】
-'!ranking'
-→ 各レーンの能力値上位ランキングを表示
+### ⚔️ チーム編成関連
+- `!make_teams [lane_diff] [team_diff]`  
+  （例：`!make_teams 30 150`）  
+  → 希望レーンを考慮して10人を自動で5v5に分ける  
+  　- 引数指定なしの場合、**レーン差30以内／合計差150以内**を目安  
+  　- 条件を満たせない場合も、最もバランスの良い組み合わせを提示（警告あり）
 
-'!show_custom @user'
-→ 指定ユーザーのカスタム勝率、試合数、各レーンの戦績を表示
+- `!make_teams_aspe [lane_diff] [team_diff] [top_n]`  
+  （例：`!make_teams_aspe 40 200 5`）  
+  → **上位N案からランダムに選ぶ FUNモード**  
+  　- デフォルト: レーン差40／合計差200／N=5  
+  　- 条件に一致しない場合も、ペナルティ加点済み候補から選択
 
-【ℹ️ その他】
-'!help_mc'
-→ コマンド一覧（簡易）
+- `!swap @user1 @user2`  
+  → レーン・チームを入れ替え（直前の `!make_teams` 系コマンド必須）
 
-'!help_mc_detail'
-→ この詳細説明を再表示
+---
+
+### 🏆 勝敗報告と成績
+- `!win A` または `!win B`  
+  → 勝利チームのレーン能力値を **+**、敗者を **−** で調整  
+  　- 5戦目までは ±10  
+  　- 6戦目以降は ±5
+
+---
+
+### 📊 各種統計
+- `!ranking`  
+  → 各レーンの能力値上位ランキングを表示
+
+- `!show_custom @user`  
+  → 指定ユーザーの **勝率・試合数・レーン別戦績** を表示
+
+---
+
+### ℹ️ その他
+- `!help_mc` → コマンド一覧（簡易）  
+- `!help_mc_detail` → この詳細説明を再表示
 """)
             break
+
 
 # ===== ちょい動作確認 =====
 @bot.command()
@@ -132,7 +152,7 @@ async def hello(ctx):
 
 @bot.command()
 async def bye(ctx):
-    await ctx.send("Botを一時停止します。")
+    await ctx.send("さようなら！※Botは停止しません。")
 
 # ===== 能力登録系 =====
 @bot.command()
@@ -245,7 +265,7 @@ async def reset(ctx):
 
 # ===== チーム分け =====
 @bot.command()
-async def make_teams(ctx, lane_diff: int = 40, team_diff: int = 50):
+async def make_teams(ctx, lane_diff: int = 30, team_diff: int = 150):
     guild_id = ctx.guild.id
     if guild_id not in participants or len(participants[guild_id]) < 10:
         await ctx.send("参加者が10人未満です。")
@@ -388,6 +408,160 @@ async def make_teams(ctx, lane_diff: int = 40, team_diff: int = 50):
 
     await ctx.send(msg)
 
+# ===== チーム分け（アスペモード） =====
+@bot.command(name="make_teams_aspe")
+async def make_teams_aspe(ctx, lane_diff: int = 40, team_diff: int = 200, top_n: int = 5):
+    """
+    ネタ用：総当たりから上位N案を抽出してランダムに決定するチーム分け
+    使い方:
+      !make_teams_aspe              -> lane差40以内、合計差200以内で上位5案からランダム
+      !make_teams_aspe 30 150       -> lane差30以内、合計差150以内で上位5案からランダム
+      !make_teams_aspe 30 150 7     -> 上位7案からランダム
+    """
+    guild_id = ctx.guild.id
+    if guild_id not in participants or len(participants[guild_id]) < 10:
+        await ctx.send("参加者が10人未満です。")
+        return
+
+    member_ids = list(participants[guild_id].keys())
+    server_data = get_server_data(guild_id)
+    if not all(str(mid) in server_data for mid in member_ids):
+        unregistered_ids = [mid for mid in member_ids if str(mid) not in server_data]
+        mention_list = ', '.join(f'<@{uid}>' for uid in unregistered_ids)
+        await ctx.send(f"一部の参加者が能力値を登録していません：{mention_list}")
+        return
+
+    candidates = []  # (score, (team1_ids, team2_ids, role_map), warnings)
+
+    # ===== チーム案を総当たりで探索（make_teamsとほぼ同じ処理） =====
+    for team1_ids in combinations(member_ids, 5):
+        team2_ids = [uid for uid in member_ids if uid not in team1_ids]
+        for team1_roles in permutations(lanes):
+            role_map = {}
+            valid_team1 = True
+            for uid, lane in zip(team1_ids, team1_roles):
+                prefs = participants[guild_id].get(uid, [])
+                if prefs and lane not in prefs and 'fill' not in prefs:
+                    valid_team1 = False
+                    break
+                role_map[uid] = lane
+            if not valid_team1:
+                continue
+
+            try:
+                valid = False
+                for team2_roles in permutations(lanes):
+                    try_role_map = role_map.copy()
+                    success = True
+                    for uid, lane in zip(team2_ids, team2_roles):
+                        prefs = participants[guild_id].get(uid, [])
+                        if prefs and lane not in prefs and 'fill' not in prefs:
+                            success = False
+                            break
+                        try_role_map[uid] = lane
+                    if success:
+                        role_map = try_role_map
+                        valid = True
+                        break
+                if not valid or len(role_map) != 10:
+                    continue
+
+                team1_score = 0
+                team2_score = 0
+                total_lane_diff = 0
+                exceeded = False
+                local_warnings = []
+
+                for lane in lanes:
+                    uid1 = [u for u in team1_ids if role_map[u] == lane][0]
+                    uid2 = [u for u in team2_ids if role_map[u] == lane][0]
+                    val1 = server_data[str(uid1)][lane]
+                    val2 = server_data[str(uid2)][lane]
+                    team1_score += val1
+                    team2_score += val2
+                    diff = abs(val1 - val2)
+                    total_lane_diff += diff
+                    if diff > lane_diff:
+                        exceeded = True
+                        local_warnings.append(f"{lane} の能力差が {diff} あります。")
+
+                team_diff_value = abs(team1_score - team2_score)
+                if team_diff_value > team_diff:
+                    exceeded = True
+                    local_warnings.append(f"チーム合計の能力差が {team_diff_value} あります。")
+
+                score = total_lane_diff + team_diff_value
+                if exceeded:
+                    score += 1000  # 制限超過ペナルティ
+
+                candidates.append((score, (team1_ids, team2_ids, role_map), local_warnings))
+
+            except Exception as e:
+                print(f"make_teams_aspe exception: {e}")
+                continue
+
+    if not candidates:
+        await ctx.send("チーム分けに失敗しました。条件を緩和するか、参加者の希望レーンや能力値を見直してください。")
+        return
+
+    # ===== 上位 top_n 案からランダム選択 =====
+    candidates.sort(key=lambda x: x[0])
+    top_n = max(1, min(top_n, len(candidates)))
+    top_slice = candidates[:top_n]
+    picked = random.choice(top_slice)
+    picked_score, picked_result, picked_warnings = picked
+    picked_index = top_slice.index(picked)  # 0始まり → 後で +1 して表示用順位に
+
+    team1_ids, team2_ids, role_map = picked_result
+
+    # ===== 結果を保存 =====
+    match_id = str(int(time()))
+    last_teams_data = load_data(team_file) or {}
+    last_teams_data[str(ctx.guild.id)] = {
+        "team_a": {str(uid): role_map[uid] for uid in team1_ids},
+        "team_b": {str(uid): role_map[uid] for uid in team2_ids},
+        "guild_id": str(ctx.guild.id),
+        "match_id": match_id,
+        "recorded": False
+    }
+    save_data(team_file, last_teams_data)
+
+    # ===== 表示用 =====
+    team1_sorted = sorted([(ctx.guild.get_member(uid), role_map[uid]) for uid in team1_ids],
+                          key=lambda x: lanes.index(x[1]))
+    team2_sorted = sorted([(ctx.guild.get_member(uid), role_map[uid]) for uid in team2_ids],
+                          key=lambda x: lanes.index(x[1]))
+
+    server_data = get_server_data(ctx.guild.id)
+    team1_total = sum(server_data[str(uid)][role_map[uid]] for uid in team1_ids)
+    team2_total = sum(server_data[str(uid)][role_map[uid]] for uid in team2_ids)
+
+    msg = f"**[ASPE] チームが決まりました！（match_id: {match_id}）**\n"
+    msg += f"**Team A**（合計: {team1_total}）\n"
+    for member, lane in team1_sorted:
+        if not member:
+            continue
+        val = server_data[str(member.id)][lane]
+        msg += f"{member.display_name}（{lane.upper()} - {val}）\n"
+
+    msg += f"\n**Team B**（合計: {team2_total}) \n"
+    for member, lane in team2_sorted:
+        if not member:
+            continue
+        val = server_data[str(member.id)][lane]
+        msg += f"{member.display_name}（{lane.upper()} - {val}）\n"
+
+    if picked_score >= 1000:
+        msg += "\n⚠️ 条件を完全には満たすチームは見つかりませんでしたが、ASPEモードで候補から選びました。\n"
+        for w in picked_warnings:
+            msg += f"⚠️ {w}\n"
+
+    msg += f"\n今回の組合せは上位 {top_n} 候補のうち {picked_index+1} 位 を採用しました。"
+    msg += f"\n（ASPEモード: バランス上位 {top_n} 案からランダム選択／lane_diff={lane_diff}, team_diff={team_diff}）"
+    await ctx.send(msg)
+
+
+
 @bot.command()
 async def show_teams(ctx):
     guild_id = str(ctx.guild.id)
@@ -511,7 +685,8 @@ async def win(ctx, winner: str):
     team_lose = last_teams_data[guild_id][loser_key]
 
     def update_ability(uid, lane, is_winner, match_count):
-        delta = 10 if match_count < 5 else 2
+        # しきい値に応じた増減値
+        delta = DELTA_EARLY if match_count < EARLY_MATCHES else DELTA_LATE
         current_ability = guild_abilities[uid].get(lane, 60)
         if is_winner:
             guild_abilities[uid][lane] = min(ability_cap, current_ability + delta)
@@ -597,63 +772,107 @@ async def ranking(ctx):
 @bot.command(name="help_mc")
 async def help_mc_command(ctx):
     await ctx.send("""
-📘 LOLMakeCustomコマンド一覧
+📘 **LOLMakeCustom コマンド一覧（簡易版）**
 
-!ability @user 10 10 10 10 10 - 能力値登録
-!delete_ability @user - 能力値削除
-!show_ability - 能力値確認
+!ability @user 10 10 10 10 10 - 能力値登録  
+!delete_ability @user - 能力値削除  
+!show_ability - 能力値一覧表示  
 
-!join top mid / fill fill - レーン希望で参加（2つ or fill）
-!leave @user - 参加リストから削除
-!participants_list - 参加者リスト
-!reset - 参加者すべて削除
+!join top mid - 参加登録（レーン指定：top/jg/mid/adc/sup または fill）  
+!leave @user - 参加解除  
+!participants_list - 参加者一覧表示  
+!reset - 全参加者リセット  
 
-!make_teams 20 50 - チーム分け（VC不要・参加者10人）
-!swap @user @user - レーン交換
-!win A / B - 勝利チーム報告 → 能力値変動
+!make_teams [lane_diff] [team_diff] - 公平寄りチーム分け（例: 30 150）  
+!make_teams_aspe [lane_diff] [team_diff] [top_n] - ASPE寄りチーム分け（ランダム要素あり／top_n=上位候補数）  
+!swap @user1 @user2 - レーン・チーム入替（直前の !make_teams 系コマンド必須）  
 
-!ranking - 各レーンの能力値ランキング
-!show_custom @user - 各個人のカスタム戦績
-!show_teams - 直近チームと合計
+!win A / B - 勝敗報告（5戦目まで ±10 ／ 6戦目以降 ±5）  
+
+!ranking - レーン別ランキング  
+!show_custom @user - 個人戦績表示  
+!show_teams - 直近チーム表示  
 
 !help_mc_detail - 詳細説明
 """)
 
+
 @bot.command(name="help_mc_detail")
 async def help_mc_detail_command(ctx):
     await ctx.send("""
-📘LOLMakeCustomコマンド詳細説明
+📘 **LOLMakeCustom コマンド詳細説明**
 
-【🧠 能力値関連】
-'!ability @user 10 10 10 10 10'
-→ @user に top, jg, mid, adc, sup の順で能力値を登録（0以上)
+---
 
-'!delete_ability @user'
-→ 指定ユーザーの能力値を削除
+### 🧠 能力値関連
+- `!ability @user 10 10 10 10 10`  
+  → @user に **top, jg, mid, adc, sup** の順で能力値を登録（0以上）
 
-'!show_ability'
-→ 登録済みの全ユーザーの能力値と合計を表示（合計順）
+- `!delete_ability @user`  
+  → 指定ユーザーの能力値を削除
 
-【🎮 参加関連】
-'!join @user top jg'
-→ 希望レーンを2つまで登録（例：topとjg）
-'!join @user fill fill'
-→ レーンがどこでも良い場合はfill
+- `!show_ability`  
+  → 登録済みの全ユーザーの能力値と **合計値順** で表示
 
-【⚔️ チーム編成関連】
-'!make_teams 20 50'
-→ 10人を自動で5v5に分ける（対面差/合計差条件つき）
-'!swap @user1 @user2'
-→ レーンやチーム入替（直近の編成が必要）
+---
 
-【🏆 勝敗報告と成績】
-'!win A または !win B'
-→ 勝者+ / 敗者-（5戦目まで±10、以降±2）
-→ 二重報告はブロックされます
+### 🎮 参加関連
+- `!join @user top jg`  
+  → 希望レーンを2つまで登録（例：top と jg）
 
-【📊 各種統計】
-'!ranking' / '!show_custom @user' / '!show_teams'
+- `!join @user fill fill`  
+  → レーンがどこでも良い場合は **fill** を利用
+
+- `!leave @user`  
+  → 参加リストから @user を削除
+
+- `!participants_list`  
+  → 現在の参加メンバー一覧と希望レーンを表示
+
+- `!reset`  
+  → 参加者を全てリセット
+
+---
+
+### ⚔️ チーム編成関連
+- `!make_teams [lane_diff] [team_diff]`  
+  （例：`!make_teams 30 150`）  
+  → 希望レーンを考慮して10人を自動で5v5に分ける  
+  　- デフォルト: **対面差30以内／合計差150以内**  
+  　- 条件を満たせない場合も最良案を提示（警告あり）
+
+- `!make_teams_aspe [lane_diff] [team_diff] [top_n]`  
+  （例：`!make_teams_aspe 40 200 5`）  
+  → **FUNモード**：上位N案からランダムに選ぶ  
+  　- デフォルト: レーン差40／合計差200／N=5  
+  　- 条件未満しか無い場合もペナルティ加点候補から選択
+
+- `!swap @user1 @user2`  
+  → レーン・チームを入れ替え（直前の編成が必要）
+
+---
+
+### 🏆 勝敗報告と成績
+- `!win A` または `!win B`  
+  → 勝利チームのレーン能力値を **+**、敗者を **−** で調整  
+  　- 5戦目までは ±10  
+  　- 6戦目以降は ±5  
+  　- 二重報告はブロック  
+  　- 実行者が直近チームに含まれていない場合は警告  
+
+---
+
+### 📊 各種統計
+- `!ranking`  
+  → 各レーンの能力値上位ランキングを表示
+
+- `!show_custom @user`  
+  → 指定ユーザーの **勝率・試合数・レーン別戦績** を表示
+
+- `!show_teams`  
+  → 直近チーム編成と合計能力値を表示
 """)
+
 
 # ===== 起動 =====
 bot.run(BOT_TOKEN)
